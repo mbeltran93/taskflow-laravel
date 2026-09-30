@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+vendor
+node_modules
+npm-debug.log
+docker-compose.yml
+Dockerfile
+.dockerignore
+storage/logs/*.log
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+tests
+.phpunit.result.cache
