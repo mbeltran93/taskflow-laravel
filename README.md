@@ -1,5 +1,7 @@
 # TaskFlow API - Laravel
 
+[![CI](https://github.com/mbeltran93/taskflow-laravel/actions/workflows/ci.yml/badge.svg)](https://github.com/mbeltran93/taskflow-laravel/actions/workflows/ci.yml)
+
 A small REST API for managing projects and tasks (a reduced Trello/Jira), built with
 **Laravel 13**, **MySQL** and **Laravel Sanctum** token authentication.
 
@@ -20,8 +22,11 @@ domain and expose the same API contract, each implemented with a different stack
 - Laravel Sanctum (personal access tokens, bearer auth)
 - Eloquent ORM, Form Requests, API Resources, Policies
 - PHPUnit feature + unit tests
+- PHPStan (via Larastan) static analysis, level 5
 - Docker + docker-compose
 - Postman collection (`postman_collection.json`) for manual/automated API testing
+- GitHub Actions CI (`.github/workflows/ci.yml`): tests against a MySQL service,
+  a Docker image build/smoke test, and PHPStan
 
 ## Running the project
 
@@ -189,6 +194,38 @@ php artisan test
 > seeding the container's MySQL database, running `docker compose exec app php artisan
 > test`, and confirming the row counts are unchanged afterwards.
 
+## Static analysis
+
+[PHPStan](https://phpstan.org/) (via [Larastan](https://github.com/larastan/larastan))
+runs at level 5 over `app/`, `database/` and `routes/`:
+
+```bash
+composer install
+vendor/bin/phpstan analyse
+```
+
+`phpstan.neon` enables `parseModelCastsMethod`, which Larastan needs to correctly type
+attributes cast through the Laravel 11+ `casts(): array` method (used by `Task::casts()`
+for `status`/`due_date`) instead of the legacy `$casts` property - without it, Larastan
+falls back to the raw database column type and flags false positives on every cast
+attribute. No baseline is needed: the initial run found two real, easy-to-fix type
+errors in `TaskResource` (both traced back to that same `parseModelCastsMethod` gap),
+and a clean run has zero errors.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push/PR to `main` with three jobs:
+
+- **test** - installs PHP 8.5 + Composer, spins up a MySQL 8 service container, runs
+  the migrations against it as a schema sanity check, then runs the 34 tests against
+  that same MySQL service via `phpunit.ci.xml` (a CI-only PHPUnit config - see the
+  comment at the top of that file for why it's separate from `phpunit.xml`, which
+  always forces SQLite by design, even in CI).
+- **docker-build** - builds the `Dockerfile` image and smoke-tests that it boots
+  (`php artisan --version`), to catch Dockerfile regressions.
+- **static-analysis** - runs PHPStan/Larastan (see "Static analysis" above). CodeQL
+  doesn't support PHP, so this is the equivalent automated check for this stack.
+
 ## Project structure highlights
 
 - `app/Models` - `User`, `Project`, `Task` Eloquent models and their relationships.
@@ -204,6 +241,10 @@ php artisan test
 - `tests/Unit/Policies` - plain PHP unit tests for the policies, with no HTTP/database
   involved.
 - `docker/entrypoint.sh` - waits for MySQL, runs migrations, seeds on first boot.
+- `phpstan.neon` - PHPStan/Larastan configuration (see "Static analysis" above).
+- `phpunit.ci.xml` - CI-only PHPUnit config that runs the tests against the GitHub
+  Actions MySQL service instead of SQLite (see "Continuous integration" above).
+- `.github/workflows/ci.yml` - the CI pipeline (see "Continuous integration" above).
 - `postman_collection.json` - a ready-to-run Postman collection covering the same flow
   (see "Postman collection" above).
 

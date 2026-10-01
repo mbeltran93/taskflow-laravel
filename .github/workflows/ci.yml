@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PHP_VERSION: "8.5"
+  PHP_EXTENSIONS: mbstring, bcmath, zip, pdo_mysql, pdo_sqlite, sqlite3
+
+jobs:
+  # Runs the 34 PHPUnit tests (feature + unit) against a real MySQL service
+  # container, via the CI-only phpunit.ci.xml configuration (see that file for why
+  # it's separate from phpunit.xml). Also runs the migrations against that same
+  # MySQL service first, as a sanity check that the schema is MySQL-compatible.
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: taskflow_test
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: taskflow_test
+      DB_USERNAME: root
+      DB_PASSWORD: root
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          tools: composer:v2
+          coverage: none
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Run database migrations against MySQL
+        run: php artisan migrate --force
+
+      - name: Run test suite against MySQL
+        run: php artisan test -c phpunit.ci.xml
+
+  # Builds the application's Docker image to catch any Dockerfile regressions,
+  # then does a quick smoke check that the resulting image actually boots and
+  # Composer's autoloader/artisan work inside it.
+  docker-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: taskflow-laravel:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test the built image
+        run: docker run --rm --entrypoint php taskflow-laravel:ci artisan --version
+
+  # Static analysis / security equivalent to CodeQL (which doesn't support PHP):
+  # PHPStan via Larastan at level 5.
+  static-analysis:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          tools: composer:v2
+          coverage: none
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Run PHPStan (Larastan)
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G --error-format=github

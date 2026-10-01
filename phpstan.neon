@@ -1,0 +1,17 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - app
+        - database
+        - routes
+
+    level: 5
+
+    # The Task model defines casts via the Laravel 11+ `casts(): array` method rather
+    # than the legacy `$casts` property; without this, Larastan falls back to the raw
+    # database column type (string) for `status`/`due_date` instead of TaskStatus/Carbon.
+    parseModelCastsMethod: true
+
+    tmpDir: storage/phpstan

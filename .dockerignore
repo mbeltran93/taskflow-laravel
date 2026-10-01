@@ -13,4 +13,6 @@ storage/logs/*.log
 storage/framework/cache/data/*
 storage/framework/sessions/*
 storage/framework/views/*
+storage/phpstan
 .phpunit.result.cache
+phpunit.ci.xml
