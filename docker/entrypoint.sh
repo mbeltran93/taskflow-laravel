@@ -7,8 +7,26 @@ set -e
 : "${DB_USERNAME:=taskflow}"
 : "${DB_PASSWORD:=secret}"
 
+# Wait for MySQL using PHP's own PDO/mysqlnd driver (the same one Laravel uses),
+# rather than the mariadb-client CLI tools, which don't support MySQL 8's default
+# caching_sha2_password authentication plugin.
+db_ready() {
+    php -r '
+        try {
+            new PDO(
+                "mysql:host=" . getenv("DB_HOST") . ";port=" . getenv("DB_PORT"),
+                getenv("DB_USERNAME"),
+                getenv("DB_PASSWORD")
+            );
+            exit(0);
+        } catch (Throwable $e) {
+            exit(1);
+        }
+    '
+}
+
 echo "Waiting for MySQL at ${DB_HOST}:${DB_PORT}..."
-until mysqladmin ping -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USERNAME" -p"$DB_PASSWORD" --silent >/dev/null 2>&1; do
+until db_ready; do
     sleep 2
 done
 echo "MySQL is up."
@@ -17,8 +35,18 @@ php artisan migrate --force
 
 # Only seed the demo dataset the first time the database is empty, so that
 # restarting the stack (with the mysql volume already populated) is a no-op.
-USER_COUNT=$(mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USERNAME" -p"$DB_PASSWORD" -N -B \
-    -e "SELECT COUNT(*) FROM \`${DB_DATABASE}\`.users;" 2>/dev/null || echo 0)
+USER_COUNT=$(php -r '
+    try {
+        $pdo = new PDO(
+            "mysql:host=" . getenv("DB_HOST") . ";port=" . getenv("DB_PORT") . ";dbname=" . getenv("DB_DATABASE"),
+            getenv("DB_USERNAME"),
+            getenv("DB_PASSWORD")
+        );
+        echo (int) $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+    } catch (Throwable $e) {
+        echo -1;
+    }
+')
 
 if [ "$USER_COUNT" = "0" ]; then
     echo "Seeding database with demo data..."
