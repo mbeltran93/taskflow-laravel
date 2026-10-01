@@ -1,0 +1,348 @@
+{
+	"info": {
+		"_postman_id": "a4f6b4f0-2d4a-4b3e-9b7e-7a6f1c9d2e10",
+		"name": "TaskFlow API",
+		"description": "End-to-end flow for the TaskFlow Laravel API: log in, create a project, create a task, change its status, then prove the authorization rules by attempting a write without a token (401) and a write as a non-owner (403).\n\nRun the whole collection top to bottom with the Collection Runner, or click through each request manually - every token and id needed by later requests is captured automatically by a test script on the request that creates it, into collection variables (no environment file needed).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{ "key": "base_url", "value": "http://localhost:8000", "type": "string" },
+		{ "key": "token", "value": "", "type": "string" },
+		{ "key": "bob_token", "value": "", "type": "string" },
+		{ "key": "project_id", "value": "", "type": "string" },
+		{ "key": "task_id", "value": "", "type": "string" }
+	],
+	"item": [
+		{
+			"name": "1. Login as Alice (owner)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('status is 200', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"const body = pm.response.json();",
+							"",
+							"pm.test('response has a token', function () {",
+							"    pm.expect(body.token).to.be.a('string').and.not.empty;",
+							"});",
+							"",
+							"pm.collectionVariables.set('token', body.token);"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\": \"alice@taskflow.test\",\n    \"password\": \"password\"\n}",
+					"options": { "raw": { "language": "json" } }
+				},
+				"url": {
+					"raw": "{{base_url}}/api/auth/login",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "auth", "login" ]
+				},
+				"description": "Logs in as the seeded demo user Alice, who owns the \"Website Revamp\" project. The Sanctum token returned is saved into the {{token}} collection variable for every authenticated request that follows."
+			}
+		},
+		{
+			"name": "2. Create Project",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('status is 201', function () {",
+							"    pm.response.to.have.status(201);",
+							"});",
+							"",
+							"const body = pm.response.json();",
+							"",
+							"pm.test('project belongs to Alice', function () {",
+							"    pm.expect(body.name).to.eql('Postman QA Project');",
+							"    pm.expect(body.ownerId).to.be.a('number');",
+							"});",
+							"",
+							"pm.collectionVariables.set('project_id', body.id);"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" },
+					{ "key": "Authorization", "value": "Bearer {{token}}" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"Postman QA Project\",\n    \"description\": \"Created by the Postman collection's automated flow.\"\n}",
+					"options": { "raw": { "language": "json" } }
+				},
+				"url": {
+					"raw": "{{base_url}}/api/projects",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "projects" ]
+				},
+				"description": "Creates a new project owned by the authenticated user (Alice). Requires the {{token}} saved by the login request. The new project's id is saved into {{project_id}}."
+			}
+		},
+		{
+			"name": "3. Create Task",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('status is 201', function () {",
+							"    pm.response.to.have.status(201);",
+							"});",
+							"",
+							"const body = pm.response.json();",
+							"",
+							"pm.test('task was created with TODO status', function () {",
+							"    pm.expect(body.title).to.eql('Postman QA Task');",
+							"    pm.expect(body.status).to.eql('TODO');",
+							"});",
+							"",
+							"pm.collectionVariables.set('task_id', body.id);"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" },
+					{ "key": "Authorization", "value": "Bearer {{token}}" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"title\": \"Postman QA Task\",\n    \"description\": \"Created by the Postman collection's automated flow.\",\n    \"project_id\": {{project_id}}\n}",
+					"options": { "raw": { "language": "json" } }
+				},
+				"url": {
+					"raw": "{{base_url}}/api/tasks",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "tasks" ]
+				},
+				"description": "Creates a task inside the project created above. project_id comes from {{project_id}}. New tasks default to TODO status. The new task's id is saved into {{task_id}}."
+			}
+		},
+		{
+			"name": "4. Change Task Status",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('status is 200', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"const body = pm.response.json();",
+							"",
+							"pm.test('task status is now IN_PROGRESS', function () {",
+							"    pm.expect(body.status).to.eql('IN_PROGRESS');",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" },
+					{ "key": "Authorization", "value": "Bearer {{token}}" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"status\": \"IN_PROGRESS\"\n}",
+					"options": { "raw": { "language": "json" } }
+				},
+				"url": {
+					"raw": "{{base_url}}/api/tasks/{{task_id}}/status",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "tasks", "{{task_id}}", "status" ]
+				},
+				"description": "Moves the task created above from TODO to IN_PROGRESS. Allowed because Alice owns the task's project (the same rule also allows the task's assignee, if any)."
+			}
+		},
+		{
+			"name": "5. Write Without Token (expect 401)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('status is 401, not a 500 crash', function () {",
+							"    pm.response.to.have.status(401);",
+							"});",
+							"",
+							"pm.test('body is a JSON error message', function () {",
+							"    const body = pm.response.json();",
+							"    pm.expect(body.message).to.be.a('string');",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"Should never be created\"\n}",
+					"options": { "raw": { "language": "json" } }
+				},
+				"url": {
+					"raw": "{{base_url}}/api/projects",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "projects" ]
+				},
+				"description": "Deliberately omits the Authorization header. Every write endpoint requires a Sanctum token, so this must return 401 Unauthenticated (a stateless JSON API must never redirect a guest to a login page or crash)."
+			}
+		},
+		{
+			"name": "6. Login as Bob (for the permission check)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('status is 200', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"const body = pm.response.json();",
+							"pm.collectionVariables.set('bob_token', body.token);"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\": \"bob@taskflow.test\",\n    \"password\": \"password\"\n}",
+					"options": { "raw": { "language": "json" } }
+				},
+				"url": {
+					"raw": "{{base_url}}/api/auth/login",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "auth", "login" ]
+				},
+				"description": "Logs in as Bob, a different demo user, purely so the next request can prove he is correctly forbidden from editing Alice's project. His token is saved into {{bob_token}}."
+			}
+		},
+		{
+			"name": "7. Update Project as Non-Owner (expect 403)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('status is 403, ownership is enforced', function () {",
+							"    pm.response.to.have.status(403);",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "PUT",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" },
+					{ "key": "Authorization", "value": "Bearer {{bob_token}}" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"Hijacked by Bob\"\n}",
+					"options": { "raw": { "language": "json" } }
+				},
+				"url": {
+					"raw": "{{base_url}}/api/projects/{{project_id}}",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "projects", "{{project_id}}" ]
+				},
+				"description": "Bob is authenticated (valid token) but is not the owner of the project created in step 2 - Alice is. Updating/deleting a project is restricted to its owner, so this must return 403 Forbidden."
+			}
+		},
+		{
+			"name": "8. Cleanup: Delete Task",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('status is 204', function () {",
+							"    pm.response.to.have.status(204);",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{token}}" }
+				],
+				"url": {
+					"raw": "{{base_url}}/api/tasks/{{task_id}}",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "tasks", "{{task_id}}" ]
+				},
+				"description": "Optional cleanup step (as the real owner, Alice) so re-running the whole collection repeatedly does not pile up test data."
+			}
+		},
+		{
+			"name": "9. Cleanup: Delete Project",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('status is 204', function () {",
+							"    pm.response.to.have.status(204);",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{token}}" }
+				],
+				"url": {
+					"raw": "{{base_url}}/api/projects/{{project_id}}",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "projects", "{{project_id}}" ]
+				},
+				"description": "Optional cleanup step (as the real owner, Alice) so re-running the whole collection repeatedly does not pile up test data."
+			}
+		}
+	]
+}

@@ -15,12 +15,13 @@ domain and expose the same API contract, each implemented with a different stack
 
 ## Tech stack
 
-- PHP 8.3 / Laravel 13
+- PHP 8.5 / Laravel 13
 - MySQL 8
 - Laravel Sanctum (personal access tokens, bearer auth)
 - Eloquent ORM, Form Requests, API Resources, Policies
-- PHPUnit feature tests
+- PHPUnit feature + unit tests
 - Docker + docker-compose
+- Postman collection (`postman_collection.json`) for manual/automated API testing
 
 ## Running the project
 
@@ -32,14 +33,14 @@ docker compose up --build
 
 That single command will:
 
-1. Build the PHP application image (Alpine, PHP 8.3, the MySQL PDO driver).
+1. Build the PHP application image (Alpine, PHP 8.5, the MySQL PDO driver).
 2. Start MySQL and wait until it reports healthy.
 3. Run the database migrations.
 4. Seed a small demo dataset (only the first time - the entrypoint script skips
    seeding if the `users` table already has rows, so restarting the stack is safe).
 5. Serve the API at **http://localhost:8000**.
 
-MySQL is also published on `localhost:3307` (mapped from its container port `3306`) if
+MySQL is also published on `localhost:3309` (mapped from its container port `3306`) if
 you want to inspect the database with a client.
 
 To stop everything: `docker compose down`. To also wipe the database volume:
@@ -55,7 +56,7 @@ To stop everything: `docker compose down`. To also wipe the database volume:
 
 ### Running without Docker
 
-If you already have PHP 8.3+, Composer and a MySQL server available:
+If you already have PHP 8.4+, Composer and a MySQL server available:
 
 ```bash
 composer install
@@ -129,11 +130,44 @@ curl -s -X PATCH http://localhost:8000/api/tasks/1/status \
   -d '{"status":"IN_PROGRESS"}'
 ```
 
+### Postman collection
+
+`postman_collection.json` (repo root) exercises the same flow as the curl example above,
+plus the two authorization failure cases, as a ready-to-run Postman collection:
+
+1. Log in as Alice (demo owner) - the returned token is saved into a **collection
+   variable** (`token`) by a test script, so you never have to copy/paste it.
+2. Create a project (using `{{token}}`) - its id is saved into `{{project_id}}`.
+3. Create a task in that project - its id is saved into `{{task_id}}`.
+4. Change the task's status to `IN_PROGRESS`.
+5. Attempt a write with **no token** - expects `401`.
+6. Log in as Bob (a different demo user) - his token is saved into `{{bob_token}}`.
+7. Attempt to update Alice's project **as Bob** - expects `403`.
+8. (Cleanup) delete the task and project created above, so the collection can be
+   re-run from scratch any number of times.
+
+**To import it:** open Postman -> **Import** -> select `postman_collection.json`. No
+separate environment file is needed - `base_url` (defaults to `http://localhost:8000`)
+and every token/id are collection variables, editable from the collection's
+**Variables** tab if you need to point it at a different host. Run the whole flow at
+once with the **Collection Runner**, or step through requests 1-7 manually in order
+(each request after the first one depends on a variable set by an earlier request).
+
+It can also be run headlessly with [Newman](https://www.npmjs.com/package/newman):
+
+```bash
+npx newman run postman_collection.json
+```
+
 ## Tests
 
-Feature tests cover login, project CRUD + ownership permissions, task CRUD + filtering
-+ assignment permissions, and user listing. They run against an in-memory SQLite
-database (see `phpunit.xml`), so no MySQL container is needed to run them.
+- `tests/Feature` - HTTP-level tests covering login, project CRUD + ownership
+  permissions, task CRUD + filtering + assignment permissions, and user listing. They
+  run against an in-memory SQLite database (see `phpunit.xml`), so no MySQL container
+  is needed to run them.
+- `tests/Unit/Policies` - plain PHP unit tests for `ProjectPolicy` and `TaskPolicy`
+  that instantiate `User`/`Project`/`Task` models directly (no database, no HTTP) and
+  assert on the policy methods' return values for every allow/deny branch.
 
 ```bash
 # Inside the running app container
@@ -143,6 +177,17 @@ docker compose exec app php artisan test
 composer install
 php artisan test
 ```
+
+> **Why `phpunit.xml` sets both `<env>` and `<server>` overrides, each `force="true"`:**
+> the app container sets `DB_CONNECTION=mysql` (and friends) as real OS environment
+> variables (see `docker-compose.yml`), which PHP copies into `$_SERVER` at startup.
+> PHPUnit's `<env>` only ever updates `putenv()`/`$_ENV`, never `$_SERVER` - and
+> Laravel's `env()` helper reads `$_SERVER` first. Without matching `<server>` entries,
+> `docker compose exec app php artisan test` would silently run the test suite's
+> `RefreshDatabase` migrations against the real MySQL database instead of the intended
+> in-memory SQLite one, wiping the demo data. Both overrides are in place; verified by
+> seeding the container's MySQL database, running `docker compose exec app php artisan
+> test`, and confirming the row counts are unchanged afterwards.
 
 ## Project structure highlights
 
@@ -156,7 +201,11 @@ php artisan test
   above.
 - `database/migrations`, `database/factories`, `database/seeders` - schema and demo data.
 - `tests/Feature` - PHPUnit feature tests exercising the endpoints above.
+- `tests/Unit/Policies` - plain PHP unit tests for the policies, with no HTTP/database
+  involved.
 - `docker/entrypoint.sh` - waits for MySQL, runs migrations, seeds on first boot.
+- `postman_collection.json` - a ready-to-run Postman collection covering the same flow
+  (see "Postman collection" above).
 
 ## Known limitations
 

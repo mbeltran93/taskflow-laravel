@@ -8,7 +8,7 @@ services:
       MYSQL_PASSWORD: secret
       MYSQL_ROOT_PASSWORD: root_secret
     ports:
-      - "3307:3306"
+      - "3309:3306"
     volumes:
       - taskflow_db_data:/var/lib/mysql
     healthcheck:
